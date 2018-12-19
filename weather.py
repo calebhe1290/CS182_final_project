@@ -10,7 +10,12 @@ from pgmpy.models import BayesianModel
 from pgmpy.estimators import MaximumLikelihoodEstimator
 from calendar import monthrange
 from pgmpy.inference import VariableElimination
-count = 0
+
+
+"""
+OPEN FILES, IMPORT AND CLEAN DATA
+
+"""
 data = {}
 nydata = {}
 index_to_field = {}
@@ -54,8 +59,6 @@ with open('nydata.csv', newline='') as csvfile:
                         nydata[nyindex_to_field[i]].append(None)
                     else:
                         nydata[nyindex_to_field[i]].append(elt)
-                    if i == 6:
-                        count += int(elt)
 data['GTMP'] = []
 nydata['GTMP'] = []
 with open('globaltemp.csv', newline='') as csvfile:
@@ -131,7 +134,7 @@ def clean(data):
     
         # GTMP
         if gtmp == None:
-            label_gtmp = 0
+            label_gtmp = None
         elif float(gtmp) <= 0.0:
             label_gtmp = 0
         elif float(gtmp) <= 0.1:
@@ -155,30 +158,54 @@ def clean(data):
         else:
             label_gtmp = 10
         data['GTMP'][i] = label_gtmp
+
+# CLEAN
+
 clean(data)
 clean(nydata)
-data.pop('GTMP')
-nydata.pop('GTMP')
+
 pandata = pd.DataFrame(data=data)
 npandata = pd.DataFrame(data=nydata)
-nypandata = npandata[:1000]
-print(nypandata.sum(axis=0))
+ny_test_pandata = npandata[:1000]
+
+# Learn the model from the Boston data
 G = BayesianModel()
-#G.add_nodes_from(['GTMP','PRCP','TMAX','TMIN', 'AWND',  'WTHR'])
-#G.add_edges_from([('GTMP', 'TMAX'),('GTMP', 'TMIN'),('TMAX', 'PRCP'),('TMIN','PRCP'),('TMAX', 'AWND'),('TMIN','AWND'),('AWND', 'WTHR'),('PRCP','WTHR')])
+G.add_nodes_from(['GTMP','PRCP','TMAX','TMIN', 'AWND',  'WTHR'])
+G.add_edges_from([('GTMP', 'TMAX'),('GTMP', 'TMIN'),('TMAX', 'PRCP'),('TMIN','PRCP'),('TMAX', 'AWND'),('TMIN','AWND'),('AWND', 'WTHR'),('PRCP','WTHR')])
+G.fit(pandata)
+assert(G.check_model())
+
+# Perform inference on Boston data
+inference = VariableElimination(G)
+for i in range(11):
+    phi_query = inference.query(variables=['WTHR'],evidence={'GTMP':i})
+    print(phi_query['WTHR'])
+    print(" given global temperature of " + str(i))
+# Test the model on the New York data
+ny_test_pandata = ny_test_pandata.copy()
+ny_test_pandata.drop('WTHR', axis=1,inplace=True)
+ny_pred = G.predict(ny_test_pandata)
+print('total number of severe weather incidences: ')
+print(ny_pred.sum(axis=0))
+
+# NOW REMOVE GLOBAL TEMPERATURE
+data.pop('GTMP')
+nydata.pop('GTMP')
+
+pandata = pd.DataFrame(data=data)
+npandata = pd.DataFrame(data=nydata)
+ny_test_pandata = npandata[:1000]
+
+# Learn the model from the Boston data
+G = BayesianModel()
 G.add_nodes_from(['PRCP','TMAX','TMIN', 'AWND',  'WTHR'])
 G.add_edges_from([('TMAX', 'PRCP'),('TMIN','PRCP'),('TMAX', 'AWND'),('TMIN','AWND'),('AWND', 'WTHR'),('PRCP','WTHR')])
 G.fit(pandata)
-
-nypandata = nypandata.copy()
-nypandata.drop('WTHR', axis=1,inplace=True)
-ny_pred = G.predict(nypandata)
-print(ny_pred.sum(axis=0))
-
 assert(G.check_model())
-inference = VariableElimination(G)
-for i in range(11):
-    phi_query = inference.query(variables=['WTHR'])
-    print(phi_query['WTHR'])
-for i in range(len(G.get_cpds())):
-    print(G.get_cpds()[i])
+
+# Test the model on the New York data
+ny_test_pandata = ny_test_pandata.copy()
+ny_test_pandata.drop('WTHR', axis=1,inplace=True)
+ny_pred = G.predict(ny_test_pandata)
+print('total number of severe weather incidences: ')
+print(ny_pred.sum(axis=0))
